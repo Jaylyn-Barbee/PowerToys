@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <common/hooks/LowlevelKeyboardEvent.h>
 #include <common/utils/EventWaiter.h>
 #include <keyboardmanager/common/Input.h>
@@ -23,6 +23,9 @@ public:
     void StartLowlevelKeyboardHook();
     void StopLowlevelKeyboardHook();
 
+    void StartLowlevelMouseHook();
+    void StopLowlevelMouseHook();
+
     bool HasRegisteredRemappings() const;
 
 private:
@@ -34,12 +37,13 @@ private:
 
     // Low level hook handles
     static HHOOK hookHandle;
+    static HHOOK mouseHookHandle;
 
     // Required for Unhook in old versions of Windows
     static HHOOK hookHandleCopy;
+    static HHOOK mouseHookHandleCopy;
 
     // Static pointer to the current KeyboardManager object required for accessing the HandleKeyboardHookEvent function in the hook procedure
-    // Only global or static variables can be accessed in a hook procedure CALLBACK
     static KeyboardManager* keyboardManagerObjectPtr;
 
     // Variable which stores all the state information to be shared between the UI and back-end
@@ -58,9 +62,12 @@ private:
     // Hook procedure definition
     static LRESULT CALLBACK HookProc(int nCode, WPARAM wParam, LPARAM lParam);
 
-    // Load settings from the file.
+    static LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam);
+
     void LoadSettings();
 
     // Function called by the hook procedure to handle the events. This is the starting point function for remapping
     intptr_t HandleKeyboardHookEvent(LowlevelKeyboardEvent* data) noexcept;
+
+    intptr_t HandleMouseHookEvent(const MSLLHOOKSTRUCT* data, WPARAM wParam) noexcept;
 };

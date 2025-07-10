@@ -13,10 +13,13 @@
 #include <ctime>
 
 #include "KeyboardEventHandlers.h"
+#include "MouseEventHandlers.h"
 #include "trace.h"
 
 HHOOK KeyboardManager::hookHandleCopy;
 HHOOK KeyboardManager::hookHandle;
+HHOOK KeyboardManager::mouseHookHandle;
+HHOOK KeyboardManager::mouseHookHandleCopy;
 KeyboardManager* KeyboardManager::keyboardManagerObjectPtr;
 
 namespace
@@ -235,4 +238,95 @@ intptr_t KeyboardManager::HandleKeyboardHookEvent(LowlevelKeyboardEvent* data) n
 
     // Handle an os-level shortcut remapping
     return KeyboardEventHandlers::HandleOSLevelShortcutRemapEvent(inputHandler, data, state);
+}
+
+LRESULT CALLBACK KeyboardManager::MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    if (nCode >= 0 && keyboardManagerObjectPtr)
+    {
+        // Convert the lParam to the MSLLHOOKSTRUCT* structure:
+        auto mouseData = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
+
+        // Call your instance method to handle this mouse event.
+        return keyboardManagerObjectPtr->HandleMouseHookEvent(mouseData, wParam);
+    }
+
+    // If you do nothing, always call next hook in chain:
+    return CallNextHookEx(NULL, nCode, wParam, lParam);
+}
+
+void KeyboardManager::StartLowlevelMouseHook()
+{
+#if defined(DISABLE_LOWLEVEL_HOOKS_WHEN_DEBUGGED)
+    if (IsDebuggerPresent())
+    {
+        return;
+    }
+#endif
+
+    if (!mouseHookHandle)
+    {
+        mouseHookHandle = SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, GetModuleHandle(NULL), NULL);
+        mouseHookHandleCopy = mouseHookHandle;
+
+        if (!mouseHookHandle)
+        {
+            DWORD errorCode = GetLastError();
+            show_last_error_message(L"SetWindowsHookEx", errorCode, L"PowerToys - Mouse Hook");
+            auto errorMessage = get_last_error_message(errorCode);
+            Trace::Error(errorCode, errorMessage.has_value() ? errorMessage.value() : L"", L"StartLowlevelMouseHook::SetWindowsHookEx");
+        }
+    }
+}
+
+void KeyboardManager::StopLowlevelMouseHook()
+{
+    if (mouseHookHandle)
+    {
+        UnhookWindowsHookEx(mouseHookHandle);
+        mouseHookHandle = NULL;
+        mouseHookHandleCopy = NULL;
+    }
+}
+
+intptr_t KeyboardManager::HandleMouseHookEvent(const MSLLHOOKSTRUCT* mouseData, WPARAM wParam) noexcept  
+{  
+    if (loadingSettings)  
+    {  
+        return 0; // pass event through  
+    }  
+
+    // Suspend remapping if remap key/shortcut window is opened  
+    if (editorIsRunningEvent != nullptr && WaitForSingleObject(editorIsRunningEvent, 0) == WAIT_OBJECT_0)  
+    {  
+        return 0; // pass event through  
+    }  
+
+    // If mouse event has suppress flag, suppress it  
+    if (mouseData->dwExtraInfo == KeyboardManagerConstants::KEYBOARDMANAGER_SUPPRESS_FLAG)  
+    {  
+        return 1; // suppress event  
+    }  
+
+    // Handle single mouse button remap (basic clicks)  
+    intptr_t SingleMouseRemapResult = MouseEventHandlers::HandleSingleMouseRemapEvent(inputHandler, mouseData, wParam, state);
+    if (SingleMouseRemapResult == 1)
+    {
+        return 1; // suppress event
+    }
+
+    intptr_t MouseWheelRemapResult = MouseEventHandlers::HandleMouseWheelRemapEvent(inputHandler, mouseData, wParam, state);
+    if (MouseWheelRemapResult == 1)
+    {
+        return 1;
+    }
+
+    intptr_t AppSpecificMouseRemapResult = MouseEventHandlers::HandleAppSpecificMouseShortcutRemapEvent(inputHandler, mouseData, wParam, state);
+    if (AppSpecificMouseRemapResult == 1)
+    {
+        return 1;
+    }
+
+    // If no remapping applied, pass event along  
+    return CallNextHookEx(mouseHookHandleCopy, 0, wParam, reinterpret_cast<LPARAM>(mouseData));  
 }
