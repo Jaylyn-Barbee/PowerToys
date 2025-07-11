@@ -68,6 +68,9 @@ namespace KBMEditor
         DWORD detectedRemapKey;
         std::mutex detectedRemapKey_mutex;
 
+        DWORD detectedMouseButton = NULL;
+        std::mutex detectedMouseButton_mutex;
+
         // Stores the UI element which is to be updated based on the remap key entered.
         winrt::Windows::Foundation::IInspectable currentSingleKeyUI;
         std::mutex currentSingleKeyUI_mutex;
@@ -170,5 +173,11 @@ namespace KBMEditor
 
         // Reset the shortcut (backend) state after releasing a key.
         void ResetDetectedShortcutKey(DWORD key);
+
+        // Function to set the detected mouse button
+        void SetDetectedMouseButton(DWORD button);
+
+        // Function to get the detected mouse button
+        DWORD GetDetectedMouseButton();
     };
 }

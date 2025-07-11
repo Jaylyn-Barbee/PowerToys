@@ -10,7 +10,7 @@ using namespace KBMEditor;
 
 // Constructor
 KeyboardManagerState::KeyboardManagerState() :
-    uiState(KeyboardManagerUIState::Deactivated), currentUIWindow(nullptr), currentShortcutUI1(nullptr), currentShortcutUI2(nullptr), currentSingleKeyUI(nullptr), detectedRemapKey(NULL)
+    uiState(KeyboardManagerUIState::Deactivated), currentUIWindow(nullptr), currentShortcutUI1(nullptr), currentShortcutUI2(nullptr), currentSingleKeyUI(nullptr), detectedRemapKey(NULL), detectedMouseButton(NULL)
 {
 }
 
@@ -476,4 +476,16 @@ bool KeyboardManagerState::HandleKeyDelayEvent(LowlevelKeyboardEvent* ev)
 
     keyDelays[ev->lParam->vkCode]->KeyEvent(ev);
     return true;
+}
+
+void KeyboardManagerState::SetDetectedMouseButton(DWORD button)
+{
+    std::lock_guard lock(detectedMouseButton_mutex);
+    detectedMouseButton = button;
+}
+
+DWORD KeyboardManagerState::GetDetectedMouseButton()
+{
+    std::lock_guard lock(detectedMouseButton_mutex);
+    return detectedMouseButton;
 }

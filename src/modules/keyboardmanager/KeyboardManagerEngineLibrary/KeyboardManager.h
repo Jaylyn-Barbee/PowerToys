@@ -4,6 +4,11 @@
 #include <keyboardmanager/common/Input.h>
 #include "State.h"
 
+namespace KBMEditor
+{
+    class KeyboardManagerState;
+}
+
 class KeyboardManager
 {
 public:
@@ -27,6 +32,8 @@ public:
     void StopLowlevelMouseHook();
 
     bool HasRegisteredRemappings() const;
+
+    static KBMEditor::KeyboardManagerState* keyboardManagerState;
 
 private:
     // Returns whether there are any remappings available without waiting for settings to load

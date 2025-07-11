@@ -15,12 +15,14 @@
 #include "KeyboardEventHandlers.h"
 #include "MouseEventHandlers.h"
 #include "trace.h"
+#include "keyboardmanager/KeyboardManagerEditorLibrary/KeyboardManagerState.h"
 
 HHOOK KeyboardManager::hookHandleCopy;
 HHOOK KeyboardManager::hookHandle;
 HHOOK KeyboardManager::mouseHookHandle;
 HHOOK KeyboardManager::mouseHookHandleCopy;
 KeyboardManager* KeyboardManager::keyboardManagerObjectPtr;
+KBMEditor::KeyboardManagerState* KeyboardManager::keyboardManagerState = nullptr;
 
 namespace
 {
@@ -36,6 +38,7 @@ KeyboardManager::KeyboardManager()
 
     // Set the static pointer to the newest object of the class
     keyboardManagerObjectPtr = this;
+    keyboardManagerState = new KBMEditor::KeyboardManagerState();
 
     std::filesystem::path modulePath(PTSettingsHelper::get_module_save_folder_location(moduleName));
     auto changeSettingsCallback = [this](DWORD err) {
@@ -242,17 +245,17 @@ intptr_t KeyboardManager::HandleKeyboardHookEvent(LowlevelKeyboardEvent* data) n
 
 LRESULT CALLBACK KeyboardManager::MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
-    if (nCode >= 0 && keyboardManagerObjectPtr)
+    if (nCode == HC_ACTION && keyboardManagerObjectPtr)
     {
-        // Convert the lParam to the MSLLHOOKSTRUCT* structure:
         auto mouseData = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
-
-        // Call your instance method to handle this mouse event.
-        return keyboardManagerObjectPtr->HandleMouseHookEvent(mouseData, wParam);
+        intptr_t result = keyboardManagerObjectPtr->HandleMouseHookEvent(mouseData, wParam);
+        if (result == 1)
+        {
+            return 1; // suppress event
+        }
     }
 
-    // If you do nothing, always call next hook in chain:
-    return CallNextHookEx(NULL, nCode, wParam, lParam);
+    return CallNextHookEx(mouseHookHandleCopy, nCode, wParam, lParam);
 }
 
 void KeyboardManager::StartLowlevelMouseHook()
@@ -284,49 +287,68 @@ void KeyboardManager::StopLowlevelMouseHook()
     if (mouseHookHandle)
     {
         UnhookWindowsHookEx(mouseHookHandle);
-        mouseHookHandle = NULL;
-        mouseHookHandleCopy = NULL;
+        mouseHookHandle = nullptr;
+        mouseHookHandleCopy = nullptr;
     }
 }
 
-intptr_t KeyboardManager::HandleMouseHookEvent(const MSLLHOOKSTRUCT* mouseData, WPARAM wParam) noexcept  
-{  
-    if (loadingSettings)  
-    {  
-        return 0; // pass event through  
-    }  
+intptr_t KeyboardManager::HandleMouseHookEvent(const MSLLHOOKSTRUCT* mouseData, WPARAM wParam) noexcept
+{
+    if (loadingSettings)
+    {
+        return 0; // pass event through
+    }
 
-    // Suspend remapping if remap key/shortcut window is opened  
-    if (editorIsRunningEvent != nullptr && WaitForSingleObject(editorIsRunningEvent, 0) == WAIT_OBJECT_0)  
-    {  
-        return 0; // pass event through  
-    }  
+    if (editorIsRunningEvent != nullptr && WaitForSingleObject(editorIsRunningEvent, 0) == WAIT_OBJECT_0)
+    {
+        return 0; // pass event through
+    }
 
-    // If mouse event has suppress flag, suppress it  
-    if (mouseData->dwExtraInfo == KeyboardManagerConstants::KEYBOARDMANAGER_SUPPRESS_FLAG)  
-    {  
-        return 1; // suppress event  
-    }  
-
-    // Handle single mouse button remap (basic clicks)  
-    intptr_t SingleMouseRemapResult = MouseEventHandlers::HandleSingleMouseRemapEvent(inputHandler, mouseData, wParam, state);
-    if (SingleMouseRemapResult == 1)
+    if (mouseData->dwExtraInfo == KeyboardManagerConstants::KEYBOARDMANAGER_SUPPRESS_FLAG)
     {
         return 1; // suppress event
     }
 
-    intptr_t MouseWheelRemapResult = MouseEventHandlers::HandleMouseWheelRemapEvent(inputHandler, mouseData, wParam, state);
-    if (MouseWheelRemapResult == 1)
+    // Detect mouse button down and update detected mouse button
+    switch (wParam)
+    {
+    case WM_LBUTTONDOWN:
+        keyboardManagerState->SetDetectedMouseButton(VK_LBUTTON);
+        break;
+    case WM_RBUTTONDOWN:
+        keyboardManagerState->SetDetectedMouseButton(VK_RBUTTON);
+        break;
+    case WM_MBUTTONDOWN:
+        keyboardManagerState->SetDetectedMouseButton(VK_MBUTTON);
+        break;
+    case WM_XBUTTONDOWN:
+        if (HIWORD(mouseData->mouseData) == XBUTTON1)
+            keyboardManagerState->SetDetectedMouseButton(VK_XBUTTON1);
+        else if (HIWORD(mouseData->mouseData) == XBUTTON2)
+            keyboardManagerState->SetDetectedMouseButton(VK_XBUTTON2);
+        break;
+    default:
+        break;
+    }
+
+    intptr_t singleMouseResult = MouseEventHandlers::HandleSingleMouseRemapEvent(inputHandler, mouseData, wParam, state);
+    if (singleMouseResult == 1)
+    {
+        return 1; // suppress event
+    }
+
+    intptr_t wheelResult = MouseEventHandlers::HandleMouseWheelRemapEvent(inputHandler, mouseData, wParam, state);
+    if (wheelResult == 1)
     {
         return 1;
     }
 
-    intptr_t AppSpecificMouseRemapResult = MouseEventHandlers::HandleAppSpecificMouseShortcutRemapEvent(inputHandler, mouseData, wParam, state);
-    if (AppSpecificMouseRemapResult == 1)
+    intptr_t appShortcutResult = MouseEventHandlers::HandleAppSpecificMouseShortcutRemapEvent(inputHandler, mouseData, wParam, state);
+    if (appShortcutResult == 1)
     {
         return 1;
     }
 
-    // If no remapping applied, pass event along  
-    return CallNextHookEx(mouseHookHandleCopy, 0, wParam, reinterpret_cast<LPARAM>(mouseData));  
+    // No remapping applied, pass event along
+    return CallNextHookEx(mouseHookHandleCopy, 0, wParam, reinterpret_cast<LPARAM>(mouseData));
 }
